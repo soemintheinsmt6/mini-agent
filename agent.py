@@ -9,7 +9,9 @@ from pathlib import Path
 
 from ollama import chat
 
-MODEL = "qwen2.5-coder:7b"
+# qwen2.5-coder:7b writes tool calls as plain JSON text instead of structured
+# tool_calls in Ollama, so the loop never sees them. llama3.1:8b returns real ones.
+MODEL = "llama3.1:8b"
 MAX_TURNS = 20
 BASH_TIMEOUT = 60  # seconds
 
