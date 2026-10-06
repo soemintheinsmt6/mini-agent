@@ -1,14 +1,12 @@
 # mini-agent
 
-CS146S Week 1 self-assignment: a ~200-line coding agent: an agent loop and four
-tools (read, write, edit, bash), running on a local Ollama model.
+A small coding agent in one Python file (~350 lines): an agent loop plus four tools
+(`read_file`, `write_file`, `edit_file`, `bash`), running on a local model through
+[Ollama](https://ollama.com). I built it to understand what tools like Claude Code do under
+the hood, as a self-study project for Stanford's
+[CS146S: The Modern Software Developer](https://themodernsoftware.dev). It isn't affiliated with the course.
 
-```bash
-conda activate cs146s
-python agent.py sandbox "the tests are failing, fix them"
-```
-
-## How an agent works (what you saw in the trace)
+## How an agent works
 
 ```
 messages = [system, user task]
@@ -19,26 +17,53 @@ loop:
     for each tool call: run it, append a "tool" message with the result
 ```
 
-That's the whole idea. Everything else (safety, limits, good tool design) is what
-makes it *usable*.
+That's the whole idea. Everything else (safety, limits, tool design) is what makes it usable.
 
-## Milestones
+## Run it
 
-Do them in order and commit after each one.
+Requirements: Python 3.10+, Ollama running locally.
 
-| # | Goal | Done when |
-|---|---|---|
-| M1 | **Loop, no tools.** Send the task and print the reply | `python agent.py sandbox "say hi"` prints a reply |
-| M2 | **`read_file` + the loop.** Execute tool calls, feed results back, stop when there are none | `"what does calculator.py do?"`: the agent reads the file before answering |
-| M3 | **`write_file`, `edit_file`, `bash`** | `"run the tests"`: the agent calls `bash` and reports the failures |
-| M4 | **Safety.** Paths stay inside the workspace, bash asks y/N, max-turns limit, bash timeout | Asking it to read `/etc/passwd` returns an error result, not the file |
-| M5 | **Real task.** Fix the sandbox's failing tests end to end | `pytest` passes in `sandbox/` after one `agent.py` run |
-| M6 | *(stretch)* **A Flutter task.** Point it at a copy of `../trace-scratch` at commit `d823274` | `flutter test` passes |
+```bash
+ollama pull llama3.1:8b
+pip install ollama
+python agent.py sandbox "the tests are failing, fix them"
+```
 
-## Rules for yourself
+`sandbox/` is a tiny calculator with deliberate bugs and a pytest suite for the agent to fix.
+Reset it between runs with `git checkout -- sandbox`.
 
-- Write the loop and the tools yourself; that's the point. Ask Claude for hints, not code.
-- Keep `agent.py` around 200 lines.
-- Tool errors are **results, not crashes**. Return the error text to the model, like
-  Claude Code's `is_error` (you saw why that matters in the trace).
-- Reset the sandbox between runs: `git -C sandbox checkout .`
+## Safety: rules the harness enforces, not the prompt
+
+| Rule | Why |
+|---|---|
+| Paths must resolve inside the workspace | The model can't read `/etc/passwd` or escape with `..` |
+| Every write, edit and shell command asks `[y/N]` first | A human approves anything with side effects |
+| Read before edit | `edit_file`/`write_file` refuse files the agent hasn't read in this run |
+| `edit_file` replaces exactly one match | Zero or several matches is an error, not a silent guess |
+| Tool errors are returned as results | The model sees `Error: ...` and can recover; the agent never crashes |
+| Turn limit, bash timeout, output cap | 20 turns, 60 s per command, 4,000 chars of output |
+| JSON fallback for tool calls | Some models write the call as plain JSON text; the whole message must be the call |
+
+## Status
+
+| Milestone | |
+|---|---|
+| M1 Loop with no tools | ✅ |
+| M2 `read_file` + feeding results back | ✅ |
+| M3 `write_file`, `edit_file`, `bash` | ✅ |
+| M4 Safety (above) | ✅ |
+| M5 Fix the sandbox tests end to end | ⏸ Planned with a stronger model (Claude API). llama3.1:8b runs the tests but then describes fixes instead of calling `edit_file` |
+
+## What I learned
+
+- **The harness matters more than the model's good intentions.** The 8B model ignored most prompt
+  rules, but code rules held. Exactly-one-match rejected three nonsense edits I had carelessly
+  approved, and read-before-edit stopped blind edits.
+- **"Supports tools" depends on the model's template.** `qwen2.5-coder:7b` writes tool calls as text
+  instead of structured `tool_calls`, so the loop never sees them; `llama3.1:8b` returns real ones.
+- **A confirmation prompt is only as good as the attention behind it.** Read every command and diff
+  before saying yes.
+
+## License
+
+[MIT](LICENSE)
