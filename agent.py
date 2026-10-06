@@ -3,6 +3,7 @@
 Usage: python agent.py <workspace_dir> "<task>"
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,8 +11,10 @@ from pathlib import Path
 from ollama import chat
 
 # qwen2.5-coder:7b writes tool calls as plain JSON text instead of structured
-# tool_calls in Ollama, so the loop never sees them. llama3.1:8b returns real ones.
-MODEL = "llama3.1:8b"
+# tool_calls in Ollama, so the loop never sees them. llama3.1:8b returns real ones
+# but narrates fixes instead of making them. gpt-oss:20b is trained for agentic
+# tool use. Override with MINI_AGENT_MODEL=llama3.1:8b to compare.
+MODEL = os.environ.get("MINI_AGENT_MODEL", "gpt-oss:20b")
 MAX_TURNS = 20
 BASH_TIMEOUT = 60  # seconds
 BASH_MAX_OUT = 4000  # chars kept from combined stdout+stderr
