@@ -38,13 +38,26 @@ Reset it between runs with `git checkout -- sandbox`.
 
 | Rule | Why |
 |---|---|
-| Paths must resolve inside the workspace | The model can't read `/etc/passwd` or escape with `..` |
-| Every write, edit and shell command asks `[y/N]` first | A human approves anything with side effects |
+| File-tool paths must resolve inside the workspace | `read_file`/`write_file`/`edit_file` can't reach `/etc/passwd`, `..` or a symlink pointing out. **`bash` is not confined** (see below) |
+| Every write, edit and shell command asks `[y/N]` first, showing the full payload | The whole command, file content or old→new text is printed in a `│` box, with control characters escaped, so `\r`/ANSI tricks or padding can't hide what you approve |
+| `bash` gets an allowlisted environment | Only `PATH`, `HOME`, locale, `TMPDIR` and venv variables. Tokens and API keys in your shell don't reach model-chosen commands |
 | Read before edit | `edit_file`/`write_file` refuse files the agent hasn't read in this run |
 | `edit_file` replaces exactly one match | Zero or several matches is an error, not a silent guess |
 | Tool errors are returned as results | The model sees `Error: ...` and can recover; the agent never crashes |
 | Turn limit, bash timeout, output cap | 20 turns, 60 s per command, 4,000 chars of output |
 | JSON fallback for tool calls | Some models write the call as plain JSON text; the whole message must be the call |
+
+### What it does *not* protect against
+
+- **`bash` runs with your full user rights.** It starts in the workspace, but `cat ~/.ssh/id_rsa` or
+  `rm -rf ~` is one `y` away. The `[y/N]` prompt is the only control, so read every command.
+- **Prompt injection.** File contents and command output go back to the model as-is. A file the agent
+  reads can tell it what to run next. Writes count too: a `conftest.py` runs on the next `pytest`.
+- For real isolation, run it in a container or VM with no network that mounts only the workspace.
+
+Security review (CS146S Week 7): Semgrep (1,237 OSS rules and 143,600 Pro rules) flags only
+`shell=True`, which is the point of a bash tool. The gaps above were found by an agent triage and
+confirmed with live probes.
 
 ## Status
 
