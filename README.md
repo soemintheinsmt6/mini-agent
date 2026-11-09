@@ -40,6 +40,8 @@ Reset it between runs with `git checkout -- sandbox`.
 |---|---|
 | File-tool paths must resolve inside the workspace | `read_file`/`write_file`/`edit_file` can't reach `/etc/passwd`, `..` or a symlink pointing out. **`bash` is not confined** (see below) |
 | Every write, edit and shell command asks `[y/N]` first, showing the full payload | The whole command, file content or old→new text is printed in a `│` box, with control characters escaped, so `\r`/ANSI tricks or padding can't hide what you approve |
+| Commands that mention `~`, `..`, `$HOME` or an absolute path get a ⚠ warning | A hint for the reviewer, not a block: `bash` isn't sandboxed |
+| Tool results are wrapped in `<untrusted_data>` | The system prompt tells the model they are data, not instructions. A hint for the model, not a boundary |
 | `bash` gets an allowlisted environment | Only `PATH`, `HOME`, locale, `TMPDIR` and venv variables. Tokens and API keys in your shell don't reach model-chosen commands |
 | Read before edit | `edit_file`/`write_file` refuse files the agent hasn't read in this run |
 | `edit_file` replaces exactly one match | Zero or several matches is an error, not a silent guess |
@@ -58,6 +60,15 @@ Reset it between runs with `git checkout -- sandbox`.
 Security review (CS146S Week 7): Semgrep (1,237 OSS rules and 143,600 Pro rules) flags only
 `shell=True`, which is the point of a bash tool. The gaps above were found by an agent triage and
 confirmed with live probes.
+
+I ran 3 prompt-injection payloads, 3 trials each, before and after the hardening:
+- a planted comment
+- a "maintainer note" asking for `cat ../SPEC.md`
+- a payload in pytest output
+
+`gpt-oss:20b` proposed 0 of 18 injected commands and still fixed the tests every time. It also never
+told the user that a payload was there. Treat that as "these payloads failed", not "the model is
+injection-proof".
 
 ## Status
 
