@@ -64,6 +64,24 @@ def _confirm(prompt: str) -> bool:
         return False
 
 
+def _safe(text: str) -> str:
+    """Escape control characters (\\r, ANSI escapes, ...) so model-written text can't
+    redraw the terminal and disguise what the human is approving. Keeps \\n and \\t."""
+    return "".join(
+        ch if ch in "\n\t" or (ch.isprintable() and ch != "\x7f") else repr(ch)[1:-1]
+        for ch in text
+    )
+
+
+def _show(label: str, text: str) -> None:
+    """Print the full payload before a [y/N] prompt. Every line gets a '│ ' gutter, so
+    model-written text can't pass itself off as a harness prompt."""
+    print(f"┌ {label}")
+    for line in _safe(text).split("\n"):
+        print(f"│ {line}")
+    print("└")
+
+
 def _fmt(v: object) -> str:
     """Shorten long repr values for the -> tool(args) log line."""
     s = repr(v)
@@ -139,7 +157,9 @@ def write_file(path: str, content: str) -> str:
     # Enforce read-before-edit for files that already exist.
     if target.exists() and str(target) not in _files_read:
         return f"Error: read '{path}' before overwriting it."
-    if not _confirm(f"Write `{path}`? [y/N] "):
+    # Show the full content: a path alone hides e.g. a conftest.py that runs on the next pytest.
+    _show(f"write_file {_safe(path)} ({len(content)} chars)", content)
+    if not _confirm(f"Write `{_safe(path)}`? [y/N] "):
         return "Write cancelled by user."
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -181,7 +201,9 @@ def edit_file(path: str, old: str, new: str) -> str:
     # Enforce read-before-edit.
     if str(target) not in _files_read:
         return f"Error: read '{path}' before editing it."
-    if not _confirm(f"Edit `{path}`? [y/N] "):
+    _show(f"edit_file {_safe(path)}: replace", old)
+    _show("with", new)
+    if not _confirm(f"Edit `{_safe(path)}`? [y/N] "):
         return "Edit cancelled by user."
     try:
         content = target.read_text()
@@ -214,15 +236,29 @@ BASH = {
 }
 
 
+# Only these variables reach bash, so tokens and API keys in the user's shell
+# (GITHUB_TOKEN, AWS_*, OPENAI_API_KEY, ...) don't leak to model-chosen commands.
+BASH_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "VIRTUAL_ENV", "CONDA_PREFIX")
+
+
+def _bash_env() -> dict[str, str]:
+    return {k: os.environ[k] for k in BASH_ENV_KEYS if k in os.environ}
+
+
 def bash(command: str) -> str:
     # M4: confirm before running; treat EOF/interrupt as "no".
-    if not _confirm(f"Run `{command}`? [y/N] "):
+    # The full command is shown escaped in a box, so \r, ANSI codes or padding can't hide part of it.
+    _show("bash", command)
+    if not _confirm("Run this command? [y/N] "):
         return "Command cancelled by user."
     try:
+        # shell=True is the point of a bash tool (Semgrep: subprocess-shell-true, accepted risk).
+        # The control is the [y/N] gate above, which is only as good as what it shows.
         result = subprocess.run(
             command,
-            shell=True,
+            shell=True,  # nosemgrep: python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
             cwd=WORKSPACE,
+            env=_bash_env(),
             capture_output=True,
             text=True,
             timeout=BASH_TIMEOUT,
